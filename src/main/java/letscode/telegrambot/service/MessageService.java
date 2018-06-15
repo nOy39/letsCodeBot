@@ -1,5 +1,7 @@
 package letscode.telegrambot.service;
 
+import letscode.telegrambot.bot.LetsCodeBot;
+import letscode.telegrambot.config.KeyboardReply;
 import letscode.telegrambot.domain.BotChat;
 import letscode.telegrambot.domain.BotMessage;
 import letscode.telegrambot.domain.BotUser;
@@ -8,16 +10,22 @@ import letscode.telegrambot.repo.MessageRepo;
 import letscode.telegrambot.repo.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.telegram.telegrambots.api.methods.send.SendMessage;
+import org.telegram.telegrambots.api.objects.CallbackQuery;
 import org.telegram.telegrambots.api.objects.Message;
 import org.telegram.telegrambots.api.objects.Update;
 
+import java.util.List;
+
 @Service
 public class MessageService {
+
     private final ChatService chatService;
     private final UserService userService;
     private final MessageRepo messageRepo;
     private final ChatRepo chatRepo;
     private final UserRepo userRepo;
+
 
     @Autowired
     public MessageService(
@@ -34,10 +42,34 @@ public class MessageService {
         this.userRepo = userRepo;
     }
 
+    /**
+     *  Метод сохраняет сообщения в Базу
+     * @param message - принятое сообщение из чата
+     * @return - возвращает тупо запись в БД
+     */
     public BotMessage saveIncoming(Message message) {
         BotMessage botMessage = getBotMessage(message);
+        boolean isReply = message.getReplyToMessage()!=null; // проверка Reply статус сообщения
+        if (!isReply) {
+            botMessage.setText(message.getText().substring(1)); // если сообщение не Ответ то записываем его как вопрос предварительно вырезав тэг знака вопроса
+        } else {    //если сообщение getReplyToMessage()
+            Integer messageId = extractId(message.getReplyToMessage().getText()); // извлекаем id сообщения из текста
+            botMessage.setAnswerFor(messageRepo.findById(messageId)); // устанавливаем сообщению перед сохранением в AnswerFor сообщение найденное по ID.
+        }
 
         return messageRepo.save(botMessage);
+    }
+
+    /**
+     * Извлекаем id из текста и возвращаем его
+     * @param text - текст в котором ищем ID
+     * @return - возвращаем INTEGER
+     */
+    private Integer extractId(String text) {
+        String idT = text.substring(text.indexOf("#")+1,
+                        text.indexOf(":"));
+        int id = Integer.parseInt(idT);
+        return id;
     }
 
     private BotMessage getBotMessage(Message message) {
@@ -73,5 +105,15 @@ public class MessageService {
         answer.getAnswerFor().setText(messageText);
 
         return messageRepo.save(answer);
+    }
+
+    /**
+     * Устанавливаем статус done = true; чтобы отметить сообщение выполненным
+     * @param callbackQuery
+     */
+    public void setDone(CallbackQuery callbackQuery) {
+        BotMessage quest = messageRepo.findById(callbackQuery.getMessage().getMessageId());
+        quest.setDone(true);
+        messageRepo.save(quest);
     }
 }
